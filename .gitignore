@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.env
+.env.local
+__pycache__/
+*.pyc
+backend/data/*.db
+backend/uploads/temp/*
+backend/uploads/parsed/*
+.DS_Store
+
+# Keep .gitkeep files in gitignored directories
+!backend/data/.gitkeep
+!backend/uploads/temp/.gitkeep
+!backend/uploads/parsed/.gitkeep
