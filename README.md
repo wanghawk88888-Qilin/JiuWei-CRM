@@ -89,6 +89,27 @@ docker compose down
 1. Backend（FastAPI）先启动
 2. Frontend（Next.js）依赖 Backend，后启动
 
+## ECS 部署环境变量
+
+在 ECS 等远程环境部署时，需要将 `NEXT_PUBLIC_API_BASE_URL` 设置为后端 API 的公网地址：
+
+```bash
+# 方式 1：通过 shell 环境变量传入
+NEXT_PUBLIC_API_BASE_URL=http://39.105.33.49:8100 docker compose build --no-cache frontend
+
+# 方式 2：创建根目录 .env 文件
+echo 'NEXT_PUBLIC_API_BASE_URL=http://39.105.33.49:8100' > .env
+
+# 然后构建并启动
+docker compose up --build -d
+```
+
+> ⚠️ **重要说明：**
+> - `NEXT_PUBLIC_API_BASE_URL` 需要在 frontend **构建阶段**注入，修改该值后必须重新 `docker compose build --no-cache frontend`。
+> - 仅 `docker compose restart frontend` 不会生效。
+> - 变量名中的 `NEXT_PUBLIC_` 前缀是 Next.js 的约定，只有此前缀的变量才会暴露给浏览器端代码。
+> - 本地开发默认使用 `http://localhost:8000`，无需额外配置。
+
 ## 服务访问地址
 
 | 服务 | 地址 |
