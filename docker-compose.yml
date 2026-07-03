@@ -4,13 +4,17 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: jiuwei-crm-backend
-    ports:
-      - "8000:8000"
+    # ⚠️ v0.1.2: 移除公网端口暴露，仅容器内部访问
+    # ports:
+    #   - "8000:8000"
     volumes:
       - ./backend/data:/app/data
       - ./backend/uploads:/app/uploads
     env_file:
       - ./backend/.env.example
+    environment:
+      # v0.1.2: 允许 nginx 反向代理后的同源请求
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://39.105.33.49,http://localhost}
     restart: unless-stopped
 
   frontend:
@@ -18,12 +22,26 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        # v0.1.2: 使用空值使前端走相对路径，通过 nginx 统一入口访问 API
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
     container_name: jiuwei-crm-frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    # ⚠️ v0.1.2: 移除公网端口暴露，仅容器内部访问
+    # ports:
+    #   - "3000:3000"
     depends_on:
+      - backend
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: jiuwei-crm-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - frontend
       - backend
     restart: unless-stopped

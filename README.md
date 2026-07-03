@@ -186,7 +186,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 开发状态
 
-**Current Version：v0.1.0**
+**Current Version：v0.1.1**
 
 - [x] Auth 模块
 - [x] Lead 管理
@@ -200,6 +200,27 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - [x] Lead → Enrolled 转已报名
 - [x] User Management 用户管理
 - [x] Docker Compose 部署
+- [x] ECS 生产部署验证
+
+## Release History
+
+### v0.1.1 (2026-07-03)
+
+- **Deployment Compatibility** — Frontend Docker Build 支持 `NEXT_PUBLIC_API_BASE_URL` build args
+- **Docker Build Improvement** — 移除 `libmupdf-dev` 系统依赖，采用 PyMuPDF wheel
+- **Frontend Build Args** — `docker-compose.yml` 支持 `NEXT_PUBLIC_API_BASE_URL` 环境变量覆盖
+- **ECS Deployment Verified** — 阿里云 ECS 生产环境部署验证通过
+- **README** — 补充 ECS 部署说明
+
+> 详见 [reports/deployment-ecs-v0.1.1.md](reports/deployment-ecs-v0.1.1.md)
+
+### v0.1.0 (2026-07-02)
+
+- 首个功能完整版本
+- Auth / Lead / FollowUp / Resume Import / Dashboard / Config / User Management
+- Docker Compose 部署支持
+
+> 详见 [reports/release-v0.1.0.md](reports/release-v0.1.0.md)
 
 ## License
 

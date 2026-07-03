@@ -4,8 +4,9 @@
 
 import type { ApiResponse } from "@/types";
 
+// v0.1.2: 使用 ?? 使空字符串生效，前端通过 nginx 统一入口走相对路径访问 API
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 // ------------------------------------------------------------------
 // Helpers
