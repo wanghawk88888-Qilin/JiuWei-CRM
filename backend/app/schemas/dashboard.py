@@ -16,6 +16,9 @@ class TodayFollowUpItem(BaseModel):
     intention_level: str | None = None
     next_followup_at: str | None = None
     owner_id: int | None = None
+    intended_course_name: str | None = None
+    latest_followup_content: str | None = None
+    followup_priority: str = "today"  # "overdue" | "today" | "upcoming"
 
     model_config = {"from_attributes": True}
 

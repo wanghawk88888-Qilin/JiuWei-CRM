@@ -196,6 +196,9 @@ export interface TodayFollowUpItem {
   intention_level: string | null;
   next_followup_at: string | null;
   owner_id: number | null;
+  intended_course_name: string | null;
+  latest_followup_content: string | null;
+  followup_priority: string;  // "overdue" | "today" | "upcoming"
 }
 
 export interface RecentLeadItem {

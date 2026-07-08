@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.database import get_db
 from app.models.user import User
-from app.schemas.dashboard import RecentLeadItem
+from app.schemas.dashboard import RecentLeadItem, TodayFollowUpItem
 from app.services import dashboard_service
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -29,11 +29,11 @@ def get_today_followups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return today's and overdue followups (max 20). Role-based filtering applied."""
+    """Return today's, overdue, and upcoming followups (max 30). Role-based filtering applied."""
     items = dashboard_service.get_today_followups(db, current_user)
     return {
         "success": True,
-        "data": items,
+        "data": [TodayFollowUpItem(**item).model_dump() for item in items],
         "message": "ok",
     }
 

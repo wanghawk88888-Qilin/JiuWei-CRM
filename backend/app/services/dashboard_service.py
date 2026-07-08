@@ -66,31 +66,70 @@ def get_dashboard_summary(db: Session, current_user: User) -> dict:
 
 
 def get_today_followups(db: Session, current_user: User) -> list[dict]:
-    """Return today's and overdue followups (max 20).
+    """Return today's, overdue, and upcoming followups (max 30).
 
-    Returns list of dicts with: lead_id, lead_name, phone, status,
-    intention_level, next_followup_at, owner_id.
-    Sorted by next_followup_at ASC.
+    Priority sorting:
+    1. Overdue  (next_followup_at < today)
+    2. Today    (next_followup_at == today)
+    3. Upcoming (next_followup_at > today, within 3 days)
+
+    Excludes enrolled and invalid leads.
+    Deduplicates by lead_id — keeps the earliest next_followup_at per lead.
     """
 
-    today_end = datetime.datetime.now().strftime("%Y-%m-%d") + " 23:59:59"
+    now = datetime.datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    today_start = today_str + " 00:00:00"
+    today_end = today_str + " 23:59:59"
+    upcoming_end = (now + datetime.timedelta(days=3)).strftime("%Y-%m-%d") + " 23:59:59"
+
+    from app.models.course import Course
+
+    # Subquery: earliest next_followup_at per lead
+    earliest_fu = (
+        db.query(
+            FollowUp.lead_id,
+            func.min(FollowUp.next_followup_at).label("earliest_next"),
+        )
+        .filter(
+            FollowUp.deleted_at.is_(None),
+            FollowUp.next_followup_at.isnot(None),
+            FollowUp.next_followup_at <= upcoming_end,
+        )
+        .group_by(FollowUp.lead_id)
+        .subquery("earliest_fu")
+    )
+
+    # Correlated subquery: latest followup content for each lead
+    latest_content_subq = (
+        db.query(FollowUp.content)
+        .filter(
+            FollowUp.lead_id == Lead.id,
+            FollowUp.deleted_at.is_(None),
+        )
+        .order_by(FollowUp.created_at.desc(), FollowUp.id.desc())
+        .limit(1)
+        .correlate(Lead)
+        .scalar_subquery()
+    )
 
     query = (
         db.query(
-            FollowUp.lead_id,
+            Lead.id.label("lead_id"),
             Lead.name.label("lead_name"),
             Lead.phone,
             Lead.status,
             Lead.intention_level,
-            FollowUp.next_followup_at,
+            earliest_fu.c.earliest_next.label("next_followup_at"),
             Lead.owner_id,
+            Course.name.label("intended_course_name"),
+            latest_content_subq.label("latest_followup_content"),
         )
-        .join(Lead, FollowUp.lead_id == Lead.id)
+        .join(earliest_fu, Lead.id == earliest_fu.c.lead_id)
+        .outerjoin(Course, Lead.intended_course_id == Course.id)
         .filter(
-            FollowUp.deleted_at.is_(None),
-            FollowUp.next_followup_at.isnot(None),
-            FollowUp.next_followup_at <= today_end,
             Lead.deleted_at.is_(None),
+            Lead.status.notin_(["enrolled", "invalid"]),
         )
     )
 
@@ -98,16 +137,25 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
     if current_user.role == "counselor":
         query = query.filter(Lead.owner_id == current_user.id)
 
-    # Deduplicate by lead_id — keep the earliest next_followup_at per lead
-    query = (
-        query
-        .order_by(FollowUp.next_followup_at.asc())
-        .limit(20)
-    )
-
     results = query.all()
-    return [
-        {
+
+    # Build response with priority classification and content truncation
+    items = []
+    for row in results:
+        # Classify priority
+        if row.next_followup_at < today_start:
+            priority = "overdue"
+        elif row.next_followup_at <= today_end:
+            priority = "today"
+        else:
+            priority = "upcoming"
+
+        # Truncate latest content for summary display
+        content = row.latest_followup_content
+        if content and len(content) > 50:
+            content = content[:50] + "..."
+
+        items.append({
             "lead_id": row.lead_id,
             "lead_name": row.lead_name,
             "phone": row.phone,
@@ -115,9 +163,19 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
             "intention_level": row.intention_level,
             "next_followup_at": row.next_followup_at,
             "owner_id": row.owner_id,
-        }
-        for row in results
-    ]
+            "intended_course_name": row.intended_course_name,
+            "latest_followup_content": content,
+            "followup_priority": priority,
+        })
+
+    # Sort: overdue → today → upcoming, each group ASC by next_followup_at
+    priority_order = {"overdue": 0, "today": 1, "upcoming": 2}
+    items.sort(key=lambda x: (
+        priority_order.get(x["followup_priority"], 9),
+        x["next_followup_at"] or "",
+    ))
+
+    return items[:30]
 
 
 def get_recent_leads(db: Session, current_user: User) -> list[Lead]:

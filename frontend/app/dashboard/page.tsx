@@ -108,33 +108,64 @@ export default function DashboardPage() {
                 <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
                   <th className="px-4 py-3">姓名</th>
                   <th className="px-4 py-3">手机号</th>
+                  <th className="px-4 py-3">意向课程</th>
                   <th className="px-4 py-3">状态</th>
+                  <th className="px-4 py-3">最近跟进</th>
                   <th className="px-4 py-3">下次跟进</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {todayFollowups.map((item) => (
-                  <tr
-                    key={item.lead_id}
-                    className="cursor-pointer transition-colors hover:bg-gray-50"
-                    onClick={() => router.push(`/leads/${item.lead_id}`)}
-                  >
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {item.lead_name}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {item.phone || "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={statusBadgeVariant(item.status)}>
-                        {STATUS_LABELS[item.status] || item.status}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {item.next_followup_at || "-"}
-                    </td>
-                  </tr>
-                ))}
+                {todayFollowups.map((item) => {
+                  const isOverdue = item.followup_priority === "overdue";
+                  const isUpcoming = item.followup_priority === "upcoming";
+
+                  return (
+                    <tr
+                      key={item.lead_id}
+                      className={`cursor-pointer transition-colors hover:bg-gray-50 ${
+                        isOverdue
+                          ? "border-l-2 border-l-red-400 bg-red-50/30"
+                          : isUpcoming
+                            ? "text-gray-500"
+                            : ""
+                      }`}
+                      onClick={() => router.push(`/leads/${item.lead_id}`)}
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <span className="flex items-center gap-2">
+                          {item.lead_name}
+                          {isOverdue && (
+                            <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
+                              已逾期
+                            </span>
+                          )}
+                          {item.followup_priority === "today" && (
+                            <span className="inline-flex items-center rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-700">
+                              今天
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {item.phone || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {item.intended_course_name || "-"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={statusBadgeVariant(item.status)}>
+                          {STATUS_LABELS[item.status] || item.status}
+                        </Badge>
+                      </td>
+                      <td className="max-w-48 px-4 py-3 text-gray-500 truncate">
+                        {item.latest_followup_content || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                        {item.next_followup_at || "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
