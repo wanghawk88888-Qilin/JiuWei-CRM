@@ -36,6 +36,8 @@ def list_leads(
     status: str | None = Query(None, description="线索状态筛选"),
     source_id: int | None = Query(None, description="来源ID筛选"),
     owner_id: int | None = Query(None, description="负责人ID筛选"),
+    created: str | None = Query(None, description="今日新增筛选，值 today"),
+    followup: str | None = Query(None, description="待跟进筛选，值 pending"),
     page: int = Query(1, ge=1, description="页码，默认1"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量，默认20，最大100"),
     db: Session = Depends(get_db),
@@ -59,6 +61,8 @@ def list_leads(
         status=status,
         source_id=source_id,
         owner_id=owner_id,
+        created=created,
+        followup=followup,
     )
 
     return {

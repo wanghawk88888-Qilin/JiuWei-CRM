@@ -7,13 +7,15 @@ from app.models.followup import FollowUp
 from app.models.lead import Lead
 from app.models.user import User
 
+from app.services import datetime_utils
+
 
 def create_lead(db: Session, lead_data: dict, current_user: User) -> Lead:
     """Create a new lead.
 
     If current_user is a counselor, owner_id is forced to current_user.id.
     """
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Counselor must always own the leads they create
     if current_user.role == "counselor":
@@ -38,10 +40,18 @@ def get_lead_by_id(db: Session, lead_id: int) -> Lead | None:
     )
 
 
+def _truncate_summary(content: str | None, limit: int = 50) -> str | None:
+    """Truncate a followup content to a short summary for list display."""
+    if content and len(content) > limit:
+        return content[:limit] + "..."
+    return content
+
+
 def _enrich_lead_items_with_followup(
     db: Session, items: list[Lead]
 ) -> None:
-    """Attach latest followup info (by, by_name, at, next_at) to each Lead object in-place."""
+    """Attach latest followup info (by, by_name, at, next_at, content) and
+    owner name to each Lead object in-place."""
     if not items:
         return
 
@@ -82,8 +92,9 @@ def _enrich_lead_items_with_followup(
         if existing is None or fu.id > existing.id:
             fu_map[fu.lead_id] = fu
 
-    # Batch-fetch user names
-    user_ids = list({fu.created_by for fu in fu_map.values()})
+    # Batch-fetch user names for followup creators AND lead owners
+    user_ids = {fu.created_by for fu in fu_map.values()}
+    user_ids.update(item.owner_id for item in items if item.owner_id is not None)
     user_map: dict[int, str] = {}
     if user_ids:
         users = db.query(User).filter(User.id.in_(user_ids)).all()
@@ -96,12 +107,19 @@ def _enrich_lead_items_with_followup(
             item.last_followup_by = fu.created_by
             item.last_followup_by_name = user_map.get(fu.created_by) or "未知用户"
             item.last_followup_at = fu.created_at
+            item.last_followup_content = _truncate_summary(fu.content)
             item.next_followup_at = fu.next_followup_at
         else:
             item.last_followup_by = None
             item.last_followup_by_name = None
             item.last_followup_at = None
+            item.last_followup_content = None
             item.next_followup_at = None
+
+        # Owner name — expresses who is responsible, NOT who last followed up.
+        item.owner_name = (
+            user_map.get(item.owner_id) if item.owner_id is not None else None
+        )
 
 
 def list_leads(
@@ -113,10 +131,18 @@ def list_leads(
     status: str | None = None,
     source_id: int | None = None,
     owner_id: int | None = None,
+    created: str | None = None,
+    followup: str | None = None,
 ) -> tuple[list[Lead], int]:
     """List leads with search, filter, pagination and role-based permission filtering.
 
     Returns (items, total).
+
+    ``created`` and ``followup`` are dashboard-card filters:
+      - created == "today"   -> leads created today
+      - followup == "pending"-> leads with a non-deleted followup due today or overdue
+    Both must stay in the same scope as the dashboard summary so that card counts
+    match the resulting list (Admin = global, Counselor = own leads only).
     """
     query = db.query(Lead).filter(Lead.deleted_at.is_(None))
 
@@ -135,6 +161,31 @@ def list_leads(
     if source_id is not None:
         query = query.filter(Lead.source_id == source_id)
 
+    # Dashboard-card filters (see docstring)
+    if created == "today":
+        # created_at is stored in UTC; compare against the UTC window that maps
+        # to the Beijing business day.
+        utc_start, utc_end = datetime_utils.business_day_utc_range()
+        query = query.filter(
+            Lead.created_at >= utc_start,
+            Lead.created_at < utc_end,
+        )
+
+    if followup == "pending":
+        today_end = datetime_utils.business_today() + " 23:59:59"
+        pending_subq = (
+            db.query(FollowUp.lead_id)
+            .filter(
+                FollowUp.deleted_at.is_(None),
+                FollowUp.next_followup_at.isnot(None),
+                datetime_utils.normalize_column(FollowUp.next_followup_at) <= today_end,
+            )
+            .distinct()
+        )
+        query = query.filter(Lead.id.in_(pending_subq))
+        # Enrolled / invalid leads are never "待跟进".
+        query = query.filter(Lead.status.notin_(["enrolled", "invalid"]))
+
     # Owner filter — counselors are forced to their own data regardless of param
     if current_user.role == "counselor":
         query = query.filter(Lead.owner_id == current_user.id)
@@ -151,7 +202,7 @@ def list_leads(
         .all()
     )
 
-    # Enrich with latest followup info
+    # Enrich with latest followup info and owner name
     _enrich_lead_items_with_followup(db, items)
 
     return items, total
@@ -159,7 +210,7 @@ def list_leads(
 
 def update_lead(db: Session, lead: Lead, update_data: dict) -> Lead:
     """Update a lead with partial data. Updates updated_at automatically."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     for key, value in update_data.items():
         if value is not None:
@@ -173,7 +224,7 @@ def update_lead(db: Session, lead: Lead, update_data: dict) -> Lead:
 
 def delete_lead(db: Session, lead: Lead) -> None:
     """Soft-delete a lead by setting deleted_at."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     lead.deleted_at = now
     lead.updated_at = now
     db.commit()

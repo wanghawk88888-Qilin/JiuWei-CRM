@@ -128,6 +128,8 @@ export const leadApi = {
     status?: string;
     source_id?: number;
     owner_id?: number;
+    created?: string;
+    followup?: string;
     page?: number;
     page_size?: number;
   }) => {

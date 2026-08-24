@@ -30,7 +30,7 @@ def create_default_admin_if_needed(db: Session) -> None:
     if existing is not None:
         return
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     admin = User(
         username="admin",
         password_hash=get_password_hash("admin123"),

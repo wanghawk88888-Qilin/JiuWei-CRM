@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { dashboardApi } from "@/lib/api";
+import { isAdminRole } from "@/lib/auth";
+import { formatSystemTime, formatNextFollowup } from "@/lib/datetime";
 import { useToast } from "@/components/Toast";
 import Card from "@/components/Card";
 import Button from "@/components/Button";
@@ -20,6 +22,7 @@ import {
 export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const isAdmin = isAdminRole();
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [todayFollowups, setTodayFollowups] = useState<TodayFollowUpItem[]>([]);
@@ -64,21 +67,25 @@ export default function DashboardPage() {
           label="全部线索"
           value={summary?.total_leads ?? 0}
           color="blue"
+          href="/leads"
         />
         <StatCard
           label="今日新增"
           value={summary?.today_new_leads ?? 0}
           color="green"
+          href="/leads?created=today"
         />
         <StatCard
           label="待跟进"
           value={summary?.pending_followups ?? 0}
           color="yellow"
+          href="/leads?followup=pending"
         />
         <StatCard
           label="已报名"
           value={summary?.enrolled_leads ?? 0}
           color="purple"
+          href="/leads?status=enrolled"
         />
       </div>
 
@@ -108,6 +115,7 @@ export default function DashboardPage() {
                 <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
                   <th className="px-4 py-3">姓名</th>
                   <th className="px-4 py-3">手机号</th>
+                  {isAdmin && <th className="px-4 py-3">咨询师</th>}
                   <th className="px-4 py-3">意向课程</th>
                   <th className="px-4 py-3">状态</th>
                   <th className="px-4 py-3">最近跟进</th>
@@ -149,6 +157,11 @@ export default function DashboardPage() {
                       <td className="px-4 py-3 text-gray-500">
                         {item.phone || "-"}
                       </td>
+                      {isAdmin && (
+                        <td className="px-4 py-3 text-gray-500">
+                          {item.owner_name || "未分配"}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-gray-500">
                         {item.intended_course_name || "-"}
                       </td>
@@ -158,10 +171,10 @@ export default function DashboardPage() {
                         </Badge>
                       </td>
                       <td className="max-w-48 px-4 py-3 text-gray-500 truncate">
-                        {item.latest_followup_content || "-"}
+                        {item.latest_followup_content || "尚未跟进"}
                       </td>
                       <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                        {item.next_followup_at || "-"}
+                        {formatNextFollowup(item.next_followup_at)}
                       </td>
                     </tr>
                   );
@@ -195,6 +208,7 @@ export default function DashboardPage() {
                 <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
                   <th className="px-4 py-3">姓名</th>
                   <th className="px-4 py-3">手机号</th>
+                  {isAdmin && <th className="px-4 py-3">咨询师</th>}
                   <th className="px-4 py-3">状态</th>
                   <th className="px-4 py-3">创建时间</th>
                 </tr>
@@ -212,13 +226,18 @@ export default function DashboardPage() {
                     <td className="px-4 py-3 text-gray-500">
                       {item.phone || "-"}
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-gray-500">
+                        {item.owner_name || "未分配"}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <Badge variant={statusBadgeVariant(item.status)}>
                         {STATUS_LABELS[item.status] || item.status}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-gray-500">
-                      {item.created_at}
+                      {formatSystemTime(item.created_at)}
                     </td>
                   </tr>
                 ))}
@@ -262,16 +281,20 @@ function StatCard({
   label,
   value,
   color,
+  href,
 }: {
   label: string;
   value: number;
   color: "blue" | "green" | "yellow" | "purple";
+  href: string;
 }) {
+  const router = useRouter();
+
   const colorMap = {
-    blue: "border-l-blue-500 bg-blue-50/50",
-    green: "border-l-green-500 bg-green-50/50",
-    yellow: "border-l-yellow-500 bg-yellow-50/50",
-    purple: "border-l-purple-500 bg-purple-50/50",
+    blue: "border-l-blue-500 bg-blue-50/50 hover:border-blue-400",
+    green: "border-l-green-500 bg-green-50/50 hover:border-green-400",
+    yellow: "border-l-yellow-500 bg-yellow-50/50 hover:border-yellow-400",
+    purple: "border-l-purple-500 bg-purple-50/50 hover:border-purple-400",
   };
 
   const textColorMap = {
@@ -282,13 +305,15 @@ function StatCard({
   };
 
   return (
-    <div
-      className={`rounded-xl border border-gray-200 border-l-4 px-5 py-4 shadow-sm ${colorMap[color]}`}
+    <button
+      type="button"
+      onClick={() => router.push(href)}
+      className={`group w-full rounded-xl border border-gray-200 border-l-4 px-5 py-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 ${colorMap[color]}`}
     >
       <p className="text-sm font-medium text-gray-600">{label}</p>
       <p className={`mt-1 text-3xl font-bold ${textColorMap[color]}`}>
         {value}
       </p>
-    </div>
+    </button>
   );
 }

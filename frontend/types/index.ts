@@ -113,9 +113,11 @@ export interface LeadListItem {
   status: string;
   intention_level: string | null;
   owner_id: number | null;
+  owner_name: string | null;
   last_followup_by: number | null;
   last_followup_by_name: string | null;
   last_followup_at: string | null;
+  last_followup_content: string | null;
   next_followup_at: string | null;
   created_at: string;
   updated_at: string;
@@ -196,6 +198,7 @@ export interface TodayFollowUpItem {
   intention_level: string | null;
   next_followup_at: string | null;
   owner_id: number | null;
+  owner_name: string | null;
   intended_course_name: string | null;
   latest_followup_content: string | null;
   followup_priority: string;  // "overdue" | "today" | "upcoming"
@@ -208,6 +211,7 @@ export interface RecentLeadItem {
   status: string;
   intention_level: string | null;
   owner_id: number | null;
+  owner_name: string | null;
   created_at: string;
 }
 

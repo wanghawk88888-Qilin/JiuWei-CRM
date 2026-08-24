@@ -7,6 +7,8 @@ from app.models.lead import Lead
 from app.models.followup import FollowUp
 from app.models.user import User
 
+from app.services import datetime_utils
+
 
 def _apply_lead_owner_filter(query, current_user: User):
     """Apply role-based owner filter to a Lead query.
@@ -26,7 +28,7 @@ def get_dashboard_summary(db: Session, current_user: User) -> dict:
         dict with keys: total_leads, today_new_leads, pending_followups, enrolled_leads
     """
 
-    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime_utils.business_today()
     today_end = today_str + " 23:59:59"
 
     # Base query: non-deleted leads
@@ -36,22 +38,27 @@ def get_dashboard_summary(db: Session, current_user: User) -> dict:
     # total_leads
     total_leads = base.count()
 
-    # today_new_leads — created_at starts with today's date
-    today_new_leads = base.filter(Lead.created_at.like(f"{today_str}%")).count()
+    # today_new_leads — created_at (UTC) falls within the Beijing business day.
+    utc_start, utc_end = datetime_utils.business_day_utc_range()
+    today_new_leads = base.filter(
+        Lead.created_at >= utc_start,
+        Lead.created_at < utc_end,
+    ).count()
 
     # enrolled_leads
     enrolled_leads = base.filter(Lead.status == "enrolled").count()
 
-    # pending_followups — distinct leads that have a non-deleted followup
-    # with next_followup_at <= today_end
+    # pending_followups — distinct leads with a due followup; enrolled / invalid
+    # leads are excluded so they no longer surface as "待跟进".
     pending_query = (
         db.query(func.count(func.distinct(FollowUp.lead_id)))
         .join(Lead, FollowUp.lead_id == Lead.id)
         .filter(
             FollowUp.deleted_at.is_(None),
             FollowUp.next_followup_at.isnot(None),
-            FollowUp.next_followup_at <= today_end,
+            datetime_utils.normalize_column(FollowUp.next_followup_at) <= today_end,
             Lead.deleted_at.is_(None),
+            Lead.status.notin_(["enrolled", "invalid"]),
         )
     )
     pending_query = _apply_lead_owner_filter(pending_query, current_user)
@@ -77,7 +84,7 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
     Deduplicates by lead_id — keeps the earliest next_followup_at per lead.
     """
 
-    now = datetime.datetime.now()
+    now = datetime_utils.business_now()
     today_str = now.strftime("%Y-%m-%d")
     today_start = today_str + " 00:00:00"
     today_end = today_str + " 23:59:59"
@@ -85,16 +92,17 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
 
     from app.models.course import Course
 
-    # Subquery: earliest next_followup_at per lead
+    # Subquery: earliest next_followup_at per lead — min over the normalised
+    # value so mixed T / space formats resolve to the true earliest time.
     earliest_fu = (
         db.query(
             FollowUp.lead_id,
-            func.min(FollowUp.next_followup_at).label("earliest_next"),
+            func.min(datetime_utils.normalize_column(FollowUp.next_followup_at)).label("earliest_next"),
         )
         .filter(
             FollowUp.deleted_at.is_(None),
             FollowUp.next_followup_at.isnot(None),
-            FollowUp.next_followup_at <= upcoming_end,
+            datetime_utils.normalize_column(FollowUp.next_followup_at) <= upcoming_end,
         )
         .group_by(FollowUp.lead_id)
         .subquery("earliest_fu")
@@ -122,11 +130,13 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
             Lead.intention_level,
             earliest_fu.c.earliest_next.label("next_followup_at"),
             Lead.owner_id,
+            User.real_name.label("owner_name"),
             Course.name.label("intended_course_name"),
             latest_content_subq.label("latest_followup_content"),
         )
         .join(earliest_fu, Lead.id == earliest_fu.c.lead_id)
         .outerjoin(Course, Lead.intended_course_id == Course.id)
+        .outerjoin(User, Lead.owner_id == User.id)
         .filter(
             Lead.deleted_at.is_(None),
             Lead.status.notin_(["enrolled", "invalid"]),
@@ -142,10 +152,12 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
     # Build response with priority classification and content truncation
     items = []
     for row in results:
-        # Classify priority
-        if row.next_followup_at < today_start:
+        # Classify priority — normalise so both "T" and space formats compare
+        # correctly against the day boundaries.
+        next_at = datetime_utils.normalize_datetime(row.next_followup_at) or ""
+        if next_at < today_start:
             priority = "overdue"
-        elif row.next_followup_at <= today_end:
+        elif next_at <= today_end:
             priority = "today"
         else:
             priority = "upcoming"
@@ -163,6 +175,7 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
             "intention_level": row.intention_level,
             "next_followup_at": row.next_followup_at,
             "owner_id": row.owner_id,
+            "owner_name": row.owner_name,
             "intended_course_name": row.intended_course_name,
             "latest_followup_content": content,
             "followup_priority": priority,
@@ -172,10 +185,25 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
     priority_order = {"overdue": 0, "today": 1, "upcoming": 2}
     items.sort(key=lambda x: (
         priority_order.get(x["followup_priority"], 9),
-        x["next_followup_at"] or "",
+        datetime_utils.normalize_datetime(x["next_followup_at"]) or "",
     ))
 
     return items[:30]
+
+
+def _enrich_owner_names(db: Session, leads: list[Lead]) -> None:
+    """Attach owner_name (User.real_name) to each Lead object in-place."""
+    if not leads:
+        return
+    owner_ids = {lead.owner_id for lead in leads if lead.owner_id is not None}
+    owner_map: dict[int, str] = {}
+    if owner_ids:
+        users = db.query(User).filter(User.id.in_(owner_ids)).all()
+        owner_map = {u.id: u.real_name for u in users}
+    for lead in leads:
+        lead.owner_name = (
+            owner_map.get(lead.owner_id) if lead.owner_id is not None else None
+        )
 
 
 def get_recent_leads(db: Session, current_user: User) -> list[Lead]:
@@ -187,9 +215,11 @@ def get_recent_leads(db: Session, current_user: User) -> list[Lead]:
     )
     query = _apply_lead_owner_filter(query, current_user)
 
-    return (
+    leads = (
         query
         .order_by(Lead.created_at.desc())
         .limit(10)
         .all()
     )
+    _enrich_owner_names(db, leads)
+    return leads

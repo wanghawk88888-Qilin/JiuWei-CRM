@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { userApi } from "@/lib/api";
+import { formatSystemTime } from "@/lib/datetime";
 import { useToast } from "@/components/Toast";
 import TopNav from "@/components/TopNav";
 import Card from "@/components/Card";
@@ -307,7 +308,7 @@ export default function UserManagementPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-gray-500">
-                        {user.created_at}
+                        {formatSystemTime(user.created_at)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

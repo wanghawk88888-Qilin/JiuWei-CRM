@@ -51,7 +51,7 @@ def create_followup(
     db: Session, lead_id: int, followup_data: dict, current_user: User
 ) -> FollowUp:
     """Create a new follow-up record and sync the lead's status, intention_level, and updated_at."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     followup = FollowUp(
         lead_id=lead_id,
@@ -84,7 +84,7 @@ def create_followup(
 
 def delete_followup(db: Session, followup: FollowUp) -> None:
     """Soft-delete a follow-up by setting deleted_at."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     followup.deleted_at = now
     followup.updated_at = now
     db.commit()

@@ -29,7 +29,7 @@ def init_default_configs(db: Session) -> None:
     so it can be called on every app startup without duplicating data.
     """
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # -- Lead Sources ---------------------------------------------------------
 

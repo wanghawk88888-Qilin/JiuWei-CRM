@@ -75,7 +75,7 @@ def handle_temp_file_deletion(
     - If TEMP_FILE_RETENTION_DAYS == 0: delete immediately, mark as deleted.
     - If TEMP_FILE_RETENTION_DAYS > 0: set expiration timestamp.
     """
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.timezone.utc)
     retention_days = settings.TEMP_FILE_RETENTION_DAYS
 
     if retention_days == 0:
@@ -118,7 +118,7 @@ def process_resume_import(
 
     Returns a dict with import_log_id, lead_draft_id, parse_status, and draft info.
     """
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # 1. Validate & save
     validate_file(file)

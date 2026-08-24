@@ -59,7 +59,7 @@ def confirm_draft(
 
     Returns the newly created Lead.
     """
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Merge: confirm_data fields (non-None) override draft fields
     lead_data: dict = {
@@ -153,7 +153,7 @@ def discard_draft(
     draft: LeadDraft,
 ) -> None:
     """Discard a lead draft by setting status to 'discarded'."""
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     draft.status = "discarded"
     draft.updated_at = now
     db.commit()
@@ -182,7 +182,7 @@ def update_draft(
         find_duplicate_lead,
     )
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     conflicts = resume_field_rules.load_conflicts(draft.conflict_flags)
 
     for field in EDITABLE_FIELDS:

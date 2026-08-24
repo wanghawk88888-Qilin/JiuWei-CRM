@@ -9,6 +9,7 @@ import {
   leadDraftApi,
   resumeImportApi,
 } from "@/lib/api";
+import { formatSystemTime, formatNextFollowup } from "@/lib/datetime";
 import { useToast } from "@/components/Toast";
 import Card from "@/components/Card";
 import Button from "@/components/Button";
@@ -345,8 +346,8 @@ export default function LeadDetailPage() {
                     <span className="text-gray-400">-</span>
                   )}
                 </div>
-                <Field label="创建时间" value={lead.created_at} />
-                <Field label="更新时间" value={lead.updated_at} />
+                <Field label="创建时间" value={formatSystemTime(lead.created_at)} />
+                <Field label="更新时间" value={formatSystemTime(lead.updated_at)} />
               </div>
               {lead.remark && (
                 <div className="mt-4 border-t border-gray-100 pt-4">
@@ -465,11 +466,11 @@ export default function LeadDetailPage() {
                           </span>
                         )}
                         {fu.next_followup_at && (
-                          <span>下次跟进：{fu.next_followup_at}</span>
+                          <span>下次跟进：{formatNextFollowup(fu.next_followup_at)}</span>
                         )}
                       </div>
                       <p className="mt-0.5 text-xs text-gray-400">
-                        {fu.created_at}
+                        {formatSystemTime(fu.created_at)}
                       </p>
                     </div>
                   ))}

@@ -35,10 +35,10 @@ class ResumeImportBatch(Base):
     created_at: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
     )
     updated_at: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
     )

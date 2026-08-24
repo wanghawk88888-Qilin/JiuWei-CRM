@@ -27,8 +27,8 @@ class ImportLog(Base):
     file_deleted_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[str] = mapped_column(
-        String(50), nullable=False, default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        String(50), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     )
     updated_at: Mapped[str] = mapped_column(
-        String(50), nullable=False, default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        String(50), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     )

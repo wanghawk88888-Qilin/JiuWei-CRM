@@ -18,8 +18,8 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[str] = mapped_column(
-        String(50), nullable=False, default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        String(50), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     )
     updated_at: Mapped[str] = mapped_column(
-        String(50), nullable=False, default=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        String(50), nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     )

@@ -108,9 +108,11 @@ class LeadListItem(BaseModel):
     status: str
     intention_level: str | None = None
     owner_id: int | None = None
+    owner_name: str | None = None
     last_followup_by: int | None = None
     last_followup_by_name: str | None = None
     last_followup_at: str | None = None
+    last_followup_content: str | None = None
     next_followup_at: str | None = None
     created_at: str
     updated_at: str

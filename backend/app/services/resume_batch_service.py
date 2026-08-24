@@ -68,7 +68,7 @@ BATCH_FAILED = "failed"
 
 
 def _now() -> str:
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def max_file_size_bytes() -> int:
