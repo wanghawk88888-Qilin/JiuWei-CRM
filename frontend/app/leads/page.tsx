@@ -82,6 +82,12 @@ function LeadsPageInner() {
             >
               上传简历
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() => router.push("/leads/import-batch")}
+            >
+              批量导入简历
+            </Button>
           </div>
         </div>
 

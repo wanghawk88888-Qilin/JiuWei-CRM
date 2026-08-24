@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import app.models  # noqa: F401  (registers every model on Base.metadata)
 from app.core.config import settings
 from app.database import Base, SessionLocal, engine
 from app.routers import auth, config, dashboard, followups, health, lead_drafts, leads, resume_imports, users
@@ -12,7 +13,10 @@ from app.services.config_service import init_default_configs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables and init default admin
+    # Startup: create tables and init default admin.
+    # create_all only ever CREATEs missing tables — it never alters an
+    # existing one. Schema upgrades (new columns / indexes) are applied only by
+    # the standalone migration script in backend/migrations/, never on startup.
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
@@ -28,7 +32,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="JiuWei CRM Backend",
         description="面向成人AI职业教育机构的轻量级招生CRM系统",
-        version="0.1.0",
+        version="0.2.1",
         lifespan=lifespan,
     )
 

@@ -1,4 +1,4 @@
-"""Lead draft service — query, confirm, and discard lead drafts."""
+"""Lead draft service — query, edit, confirm, and discard lead drafts."""
 
 import datetime
 import logging
@@ -8,8 +8,22 @@ from sqlalchemy.orm import Session
 from app.models.lead import Lead
 from app.models.lead_draft import LeadDraft
 from app.models.user import User
+from app.services import resume_field_rules
 
 logger = logging.getLogger(__name__)
+
+# Statuses that may still be confirmed into a formal Lead.
+# `pending` is the legacy single-import status and must keep working.
+CONFIRMABLE_STATUSES = ("pending", "ready", "needs_review")
+# Statuses a human may still edit or discard.
+EDITABLE_STATUSES = ("pending", "ready", "needs_review", "duplicate")
+
+# Fields a consultant may correct during human review.
+EDITABLE_FIELDS = (
+    "name", "phone", "wechat", "email", "gender", "age", "education",
+    "school", "major", "graduation_time", "city", "work_years",
+    "latest_company", "latest_position", "skills",
+)
 
 
 def get_lead_draft_by_id(db: Session, draft_id: int) -> LeadDraft | None:
@@ -143,3 +157,76 @@ def discard_draft(
     draft.status = "discarded"
     draft.updated_at = now
     db.commit()
+
+
+def update_draft(
+    db: Session,
+    draft: LeadDraft,
+    update_data: dict,
+) -> LeadDraft:
+    """Apply a human review edit to a draft and re-resolve its status.
+
+    A draft is only promoted to `ready` when it now carries a name AND a valid
+    mainland mobile number AND that number is not already in the CRM. Because a
+    person supplied the values, the confidence flags for the fields they filled
+    in are raised and the matching conflicts cleared.
+
+    Batch drafts only — legacy `pending` drafts keep their status so the
+    single-resume flow behaves exactly as before.
+    """
+    # Imported here to avoid a circular import at module load time.
+    from app.services.resume_batch_service import (
+        STATUS_DUPLICATE,
+        STATUS_NEEDS_REVIEW,
+        STATUS_READY,
+        find_duplicate_lead,
+    )
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conflicts = resume_field_rules.load_conflicts(draft.conflict_flags)
+
+    for field in EDITABLE_FIELDS:
+        if field not in update_data:
+            continue
+        value = update_data[field]
+        if isinstance(value, str):
+            value = value.strip() or None
+
+        if field == "name" and value:
+            value = resume_field_rules.normalize_name(value)
+            draft.name_confidence = resume_field_rules.CONF_HIGH
+            conflicts.pop("name", None)
+        elif field == "phone" and value:
+            normalized = resume_field_rules.normalize_phone(value)
+            # Keep what the human typed if it is not a mainland mobile; the
+            # status resolution below will hold the draft in review.
+            value = normalized or value
+            if normalized:
+                draft.phone_confidence = resume_field_rules.CONF_HIGH
+                conflicts.pop("phone", None)
+
+        setattr(draft, field, value)
+
+    draft.conflict_flags = resume_field_rules.dump_conflicts(conflicts)
+
+    # Legacy single-import drafts keep the original two-state behaviour.
+    if draft.status != "pending":
+        has_name = bool(draft.name and draft.name.strip())
+        has_phone = resume_field_rules.is_valid_phone(draft.phone)
+
+        if not (has_name and has_phone):
+            draft.status = STATUS_NEEDS_REVIEW
+            draft.duplicate_lead_id = None
+        else:
+            duplicate = find_duplicate_lead(db, draft.phone)
+            if duplicate:
+                draft.status = STATUS_DUPLICATE
+                draft.duplicate_lead_id = duplicate["existing_lead_id"]
+            else:
+                draft.status = STATUS_READY
+                draft.duplicate_lead_id = None
+
+    draft.updated_at = now
+    db.commit()
+    db.refresh(draft)
+    return draft

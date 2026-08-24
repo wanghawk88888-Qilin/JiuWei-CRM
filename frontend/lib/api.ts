@@ -203,6 +203,41 @@ export const resumeImportApi = {
       },
     );
   },
+
+  // v0.2.1 — batch import
+  limits: () =>
+    request<import("@/types").BatchLimits>(
+      "/api/v1/resume-imports/batch-limits",
+    ),
+
+  uploadBatch: (files: File[]) => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    return request<import("@/types").BatchUploadResult>(
+      "/api/v1/resume-imports/batch",
+      {
+        method: "POST",
+        body: formData,
+      },
+    );
+  },
+
+  getBatch: (batchId: number) =>
+    request<import("@/types").BatchDetail>(
+      `/api/v1/resume-imports/batches/${batchId}`,
+    ),
+
+  confirmBatch: (
+    batchId: number,
+    data?: import("@/types").BatchConfirmRequest,
+  ) =>
+    request<import("@/types").BatchConfirmResult>(
+      `/api/v1/resume-imports/batches/${batchId}/confirm`,
+      {
+        method: "POST",
+        body: JSON.stringify(data ?? {}),
+      },
+    ),
 };
 
 // ------------------------------------------------------------------
@@ -212,6 +247,12 @@ export const resumeImportApi = {
 export const leadDraftApi = {
   get: (draftId: number) =>
     request<import("@/types").LeadDraft>(`/api/v1/lead-drafts/${draftId}`),
+
+  update: (draftId: number, data: import("@/types").LeadDraftUpdate) =>
+    request<import("@/types").LeadDraft>(`/api/v1/lead-drafts/${draftId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 
   confirm: (draftId: number, data: import("@/types").LeadDraftConfirm) =>
     request<{ lead_id: number }>(`/api/v1/lead-drafts/${draftId}/confirm`, {

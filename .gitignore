@@ -4,7 +4,12 @@ node_modules/
 .env.local
 __pycache__/
 *.pyc
+*.venv/
+.venv/
+venv/
+*.tsbuildinfo
 backend/data/*.db
+backend/data/*.db.bak-*
 backend/uploads/temp/*
 backend/uploads/parsed/*
 .DS_Store

@@ -15,15 +15,17 @@ from app.models.lead_draft import LeadDraft
 from app.models.user import User
 from app.services.llm_extract_service import enhance_resume_extract
 from app.services.resume_extract_service import extract_all
-from app.services.resume_parser_service import parse_resume_text
+from app.services.resume_parser_service import ResumeParseError, parse_resume_text
 
 logger = logging.getLogger(__name__)
 
-# Supported file extensions
+# Supported file extensions. .doc is deliberately excluded: the current image
+# has no stable converter for the legacy binary format, and v0.2.1 does not
+# add heavyweight system dependencies.
 ALLOWED_EXTENSIONS = {".docx", ".pdf"}
 
-# Maximum file size: 10 MB
-MAX_FILE_SIZE = 10 * 1024 * 1024
+# Maximum file size, driven by settings so the single and batch paths agree.
+MAX_FILE_SIZE = settings.RESUME_MAX_FILE_SIZE_MB * 1024 * 1024
 
 
 def validate_file(file: UploadFile) -> None:
@@ -84,7 +86,10 @@ def handle_temp_file_deletion(
             except OSError as e:
                 logger.warning(f"Failed to delete temp file {import_log.temp_file_path}: {e}")
         import_log.file_deleted_at = now.strftime("%Y-%m-%d %H:%M:%S")
-        import_log.parse_status = "deleted"
+        # Keep a terminal 'failed' status: it is the only record of *why* a
+        # file could not be imported. Overwriting it would lose that reason.
+        if import_log.parse_status != "failed":
+            import_log.parse_status = "deleted"
     else:
         # Keep for N days
         expires_at = now + datetime.timedelta(days=retention_days)
@@ -138,14 +143,21 @@ def process_resume_import(
     extracted_text = ""
     parse_status = "parsed"
     parse_error = None
+    error_code = None
 
     # 3. Parse text
     try:
         extracted_text = parse_resume_text(temp_path, ext)
+    except ResumeParseError as e:
+        logger.warning("Resume parsing failed: %s", e)
+        parse_status = "failed"
+        parse_error = e.message
+        error_code = e.error_code
     except Exception as e:
         logger.exception("Resume parsing failed")
         parse_status = "failed"
         parse_error = str(e)
+        error_code = "PARSE_FAILED"
 
     # 4. Rule-based extraction (even if parsing partially succeeded)
     extraction: dict = {}
@@ -180,6 +192,7 @@ def process_resume_import(
     # 7. Update ImportLog
     import_log.parse_status = parse_status
     import_log.parse_error = parse_error
+    import_log.error_code = error_code
     import_log.extracted_text_length = len(extracted_text) if extracted_text else 0
     import_log.llm_used = int(ai_result.get("llm_used", False))
     import_log.llm_provider = ai_result.get("llm_provider")
