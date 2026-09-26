@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   configApi,
   followUpApi,
@@ -9,6 +9,12 @@ import {
   leadDraftApi,
   resumeImportApi,
 } from "@/lib/api";
+import { isAdminRole } from "@/lib/auth";
+import {
+  isDashboardPending,
+  resolveReturnPath,
+  resolvePostSaveRoute,
+} from "@/lib/leadReturn";
 import { formatSystemTime, formatNextFollowup } from "@/lib/datetime";
 import { useToast } from "@/components/Toast";
 import Card from "@/components/Card";
@@ -33,11 +39,17 @@ import {
   type LeadSource,
 } from "@/types";
 
-export default function LeadDetailPage() {
+function LeadDetailPageInner() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const leadId = Number(params.id);
+
+  // Whitelisted source for source-aware back / post-save navigation.
+  const from = searchParams.get("from");
+  const isAdmin = isAdminRole();
+  const backPath = resolveReturnPath(from);
 
   // -- Data --------------------------------------------------------------
   const [lead, setLead] = useState<LeadDetail | null>(null);
@@ -56,6 +68,11 @@ export default function LeadDetailPage() {
 
   // -- Enroll ------------------------------------------------------------
   const [enrolling, setEnrolling] = useState(false);
+
+  // -- Invalid / restore / delete ---------------------------------------
+  const [invalidating, setInvalidating] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // -- Resume upload -----------------------------------------------------
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,6 +137,74 @@ export default function LeadDetailPage() {
     }
   };
 
+  // -- Invalid / restore handlers ---------------------------------------
+
+  const handleMarkInvalid = async () => {
+    if (
+      !confirm(
+        "确认将该线索标记为无效？\n标记后，该线索将不再进入待跟进任务，历史跟进记录仍会保留。",
+      )
+    ) {
+      return;
+    }
+
+    setInvalidating(true);
+    try {
+      await leadApi.update(leadId, { status: "invalid" });
+      toast("已标记为无效", "success");
+      if (isDashboardPending(from)) {
+        router.push("/dashboard");
+      } else {
+        await fetchLead();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "操作失败";
+      toast(message, "error");
+    } finally {
+      setInvalidating(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!confirm("确认恢复该线索的跟进？恢复后该线索将回到跟进中状态。")) return;
+
+    setRestoring(true);
+    try {
+      await leadApi.update(leadId, { status: "following" });
+      toast("已恢复跟进", "success");
+      await fetchLead();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "操作失败";
+      toast(message, "error");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  // -- Delete handler (admin only) --------------------------------------
+
+  const handleDelete = async () => {
+    if (
+      !confirm(
+        "确认删除该线索？\n删除后该线索将不再出现在正常业务列表中，历史数据仍会保留。",
+      )
+    ) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      await leadApi.delete(leadId);
+      toast("线索已删除", "success");
+      router.push("/leads");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "删除失败";
+      toast(message, "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // -- FollowUp handlers -------------------------------------------------
 
   const handleAddFollowUp = async (e: React.FormEvent) => {
@@ -139,6 +224,16 @@ export default function LeadDetailPage() {
         next_followup_at: fuNextTime || null,
       });
       toast("跟进记录已保存", "success");
+
+      // Source-aware: from the dashboard queue or the pending-filtered list,
+      // jump straight back so the counselor can keep working through the queue.
+      // From the normal list (or with no source), stay to show the new record.
+      const postSaveRoute = resolvePostSaveRoute(from);
+      if (postSaveRoute) {
+        router.push(postSaveRoute);
+        return;
+      }
+
       setFuContent("");
       setFuIntention("");
       setFuNextTime("");
@@ -252,7 +347,7 @@ export default function LeadDetailPage() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" onClick={() => router.push("/leads")}>
+            <Button variant="ghost" onClick={() => router.push(backPath)}>
               ← 返回列表
             </Button>
             <h1 className="text-xl font-bold text-gray-900">{lead.name}</h1>
@@ -260,7 +355,7 @@ export default function LeadDetailPage() {
               {STATUS_LABELS[lead.status] || lead.status}
             </Badge>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {lead.status !== "enrolled" && (
               <Button
                 size="sm"
@@ -271,6 +366,25 @@ export default function LeadDetailPage() {
                 标记为已报名
               </Button>
             )}
+            {lead.status === "invalid" ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={restoring}
+                onClick={handleRestore}
+              >
+                恢复跟进
+              </Button>
+            ) : lead.status !== "enrolled" ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={invalidating}
+                onClick={handleMarkInvalid}
+              >
+                标记为无效
+              </Button>
+            ) : null}
             <input
               ref={fileInputRef}
               type="file"
@@ -286,6 +400,16 @@ export default function LeadDetailPage() {
             >
               上传简历
             </Button>
+            {isAdmin && (
+              <Button
+                variant="danger"
+                size="sm"
+                loading={deleting}
+                onClick={handleDelete}
+              >
+                删除线索
+              </Button>
+            )}
           </div>
         </div>
 
@@ -518,6 +642,23 @@ export default function LeadDetailPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+export default function LeadDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen">
+          <TopNav currentPath="/leads" />
+          <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+            <Loading text="加载中..." />
+          </main>
+        </div>
+      }
+    >
+      <LeadDetailPageInner />
+    </Suspense>
   );
 }
 

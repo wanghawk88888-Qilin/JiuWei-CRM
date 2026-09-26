@@ -482,7 +482,14 @@ def build_batch_detail(db: Session, batch: ResumeImportBatch) -> dict:
     }
     leads_by_id: dict[int, Lead] = {}
     if duplicate_lead_ids:
-        for lead in db.query(Lead).filter(Lead.id.in_(duplicate_lead_ids)).all():
+        for lead in (
+            db.query(Lead)
+            .filter(
+                Lead.id.in_(duplicate_lead_ids),
+                Lead.deleted_at.is_(None),
+            )
+            .all()
+        ):
             leads_by_id[lead.id] = lead
 
     items: list[dict] = []

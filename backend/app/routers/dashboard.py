@@ -29,7 +29,7 @@ def get_today_followups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return today's, overdue, and upcoming followups (max 30). Role-based filtering applied."""
+    """Return today's followups (overdue + due today). Role-based filtering applied."""
     items = dashboard_service.get_today_followups(db, current_user)
     return {
         "success": True,

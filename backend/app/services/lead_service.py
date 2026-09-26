@@ -10,6 +10,33 @@ from app.models.user import User
 from app.services import datetime_utils
 
 
+def latest_followup_next_at_subquery(db: Session):
+    """Correlated scalar subquery for a lead's effective ``next_followup_at``.
+
+    The single source of truth for the "latest followup" rule shared by the
+    dashboard summary, the dashboard today-followups list, and the lead list
+    ``followup=pending`` filter.
+
+    A lead's effective next-followup time is the ``next_followup_at`` of its
+    *latest* non-deleted followup — never ``min`` over all historical followups.
+    "Latest" follows the same rule as the list enrichment: order by
+    ``created_at DESC, id DESC`` so ties on the timestamp break toward the most
+    recently inserted row. The value is normalised (``T`` → space) so callers
+    can compare it directly against the ``YYYY-MM-DD HH:MM:SS`` day boundary.
+    """
+    return (
+        db.query(datetime_utils.normalize_column(FollowUp.next_followup_at))
+        .filter(
+            FollowUp.lead_id == Lead.id,
+            FollowUp.deleted_at.is_(None),
+        )
+        .order_by(FollowUp.created_at.desc(), FollowUp.id.desc())
+        .limit(1)
+        .correlate(Lead)
+        .scalar_subquery()
+    )
+
+
 def create_lead(db: Session, lead_data: dict, current_user: User) -> Lead:
     """Create a new lead.
 
@@ -173,18 +200,13 @@ def list_leads(
 
     if followup == "pending":
         today_end = datetime_utils.business_today() + " 23:59:59"
-        pending_subq = (
-            db.query(FollowUp.lead_id)
-            .filter(
-                FollowUp.deleted_at.is_(None),
-                FollowUp.next_followup_at.isnot(None),
-                datetime_utils.normalize_column(FollowUp.next_followup_at) <= today_end,
-            )
-            .distinct()
+        effective = latest_followup_next_at_subquery(db)
+        query = query.filter(
+            effective.isnot(None),
+            effective <= today_end,
+            # Enrolled / invalid leads are never "待跟进".
+            Lead.status.notin_(["enrolled", "invalid"]),
         )
-        query = query.filter(Lead.id.in_(pending_subq))
-        # Enrolled / invalid leads are never "待跟进".
-        query = query.filter(Lead.status.notin_(["enrolled", "invalid"]))
 
     # Owner filter — counselors are forced to their own data regardless of param
     if current_user.role == "counselor":

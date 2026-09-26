@@ -216,7 +216,13 @@ function LeadsPageInner() {
                       <tr
                         key={item.id}
                         className="cursor-pointer transition-colors hover:bg-gray-50"
-                        onClick={() => router.push(`/leads/${item.id}`)}
+                        onClick={() =>
+                          router.push(
+                            `/leads/${item.id}?from=${
+                              followupParam === "pending" ? "pending-list" : "list"
+                            }`,
+                          )
+                        }
                       >
                         <td className="px-4 py-3 font-medium text-gray-900">
                           {item.name}

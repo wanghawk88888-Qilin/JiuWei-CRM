@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 from app.database import get_db
 from app.models.user import User
 from app.schemas.lead import (
@@ -208,22 +208,19 @@ def update_lead(
 def delete_lead(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Soft delete a lead."""
+    """Soft delete a lead (admin only).
+
+    manager / counselor are rejected with 403 — even for their own leads — so
+    the delete entry point is enforced server-side, not just hidden in the UI.
+    """
     lead = lead_service.get_lead_by_id(db, lead_id)
     if lead is None:
         return {
             "success": False,
             "error_code": "LEAD_NOT_FOUND",
             "message": "线索不存在",
-        }
-
-    if not _check_lead_access(lead, current_user):
-        return {
-            "success": False,
-            "error_code": "FORBIDDEN",
-            "message": "无权限访问该线索",
         }
 
     lead_service.delete_lead(db, lead)

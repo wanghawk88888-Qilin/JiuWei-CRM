@@ -322,13 +322,14 @@ def test_pending_t_format_and_space_format_consistent(client, db, admin_auth):
     names = {i["name"] for i in pending["data"]["items"]}
     assert names == {"T格式今天", "空格格式今天", "T格式逾期"}
 
-    # overdue / today / upcoming classification preserved across both formats.
+    # overdue / today classification preserved across both formats; tomorrow is
+    # no longer surfaced at all in the today-followups list (v0.2.3).
     tf = client.get("/api/v1/dashboard/today-followups", headers=admin_auth).json()
     priority = {i["lead_name"]: i["followup_priority"] for i in tf["data"]}
     assert priority["T格式今天"] == "today"
     assert priority["空格格式今天"] == "today"
     assert priority["T格式逾期"] == "overdue"
-    assert priority["T格式未来"] == "upcoming"
+    assert "T格式未来" not in priority
 
 
 def test_pending_t_format_midnight_minutes_only(client, db, admin_auth):
@@ -348,24 +349,33 @@ def test_pending_t_format_midnight_minutes_only(client, db, admin_auth):
     assert pending["data"]["items"][0]["name"] == "ISO零点五分"
 
 
-def test_earliest_followup_handles_mixed_t_and_space_formats(client, db, admin_auth):
-    """A lead with both T and space formats must resolve to the true earliest.
+def test_latest_followup_wins_over_earlier(client, db, admin_auth):
+    """A lead's effective next_followup_at is the LATEST followup's value.
 
-    Raw ``min()`` would pick ``2026-08-24 10:00:00`` over ``2026-08-24T08:00``
-    because ``'T'`` (0x54) sorts after ``' '`` (0x20). The earliest must be the
-    08:00 one (the T-format record).
+    v0.2.2 used ``min`` over all historical followups; v0.2.3 uses the latest
+    non-deleted followup. Here the latest followup (T-format ``16:00``) is
+    *later* in the day than the earlier one (``09:00``), so ``min`` and
+    ``latest`` disagree — the result must be ``16:00``.
     """
     counselor_id = _uid(db, "test_counselor")
     lead = _mk_lead(db, "双格式", counselor_id)
     today = _today_date()
-    _mk_followup(db, lead.id, counselor_id, "晚", next_followup_at=today + " 10:00:00")
-    _mk_followup(db, lead.id, counselor_id, "早", next_followup_at=today + "T08:00")
+    _mk_followup(
+        db, lead.id, counselor_id, "旧",
+        next_followup_at=today + " 09:00:00",
+        created_at="2026-01-01 00:00:00",
+    )
+    _mk_followup(
+        db, lead.id, counselor_id, "新",
+        next_followup_at=today + "T16:00",
+        created_at="2026-02-01 00:00:00",
+    )
 
     tf = client.get("/api/v1/dashboard/today-followups", headers=admin_auth).json()
     items = [i for i in tf["data"] if i["lead_name"] == "双格式"]
     assert len(items) == 1
     assert items[0]["followup_priority"] == "today"
-    assert items[0]["next_followup_at"] == today + " 08:00"
+    assert items[0]["next_followup_at"] == today + " 16:00"
 
 
 def test_status_enrolled_filter(client, db, admin_auth):

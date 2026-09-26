@@ -19,7 +19,7 @@ class TodayFollowUpItem(BaseModel):
     owner_name: str | None = None
     intended_course_name: str | None = None
     latest_followup_content: str | None = None
-    followup_priority: str = "today"  # "overdue" | "today" | "upcoming"
+    followup_priority: str = "today"  # "overdue" | "today"
 
     model_config = {"from_attributes": True}
 

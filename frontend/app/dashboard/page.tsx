@@ -125,19 +125,18 @@ export default function DashboardPage() {
               <tbody className="divide-y divide-gray-50">
                 {todayFollowups.map((item) => {
                   const isOverdue = item.followup_priority === "overdue";
-                  const isUpcoming = item.followup_priority === "upcoming";
 
                   return (
                     <tr
                       key={item.lead_id}
                       className={`cursor-pointer transition-colors hover:bg-gray-50 ${
-                        isOverdue
-                          ? "border-l-2 border-l-red-400 bg-red-50/30"
-                          : isUpcoming
-                            ? "text-gray-500"
-                            : ""
+                        isOverdue ? "border-l-2 border-l-red-400 bg-red-50/30" : ""
                       }`}
-                      onClick={() => router.push(`/leads/${item.lead_id}`)}
+                      onClick={() =>
+                        router.push(
+                          `/leads/${item.lead_id}?from=dashboard-pending`,
+                        )
+                      }
                     >
                       <td className="px-4 py-3 font-medium text-gray-900">
                         <span className="flex items-center gap-2">

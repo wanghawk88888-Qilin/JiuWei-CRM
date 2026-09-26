@@ -120,9 +120,10 @@ def test_late_evening_boundary(client, db, admin_auth, monkeypatch):
     tf = client.get("/api/v1/dashboard/today-followups", headers=admin_auth).json()
     priority = {i["lead_name"]: i["followup_priority"] for i in tf["data"]}
     assert priority["晚间今日"] == "today"
-    assert priority["次日线索"] == "upcoming"
+    # The 08-26 followup is tomorrow, so it is excluded from today-followups.
+    assert "次日线索" not in priority
 
-    # The 08-26 followup is upcoming, so it is excluded from pending.
+    # The 08-26 followup is tomorrow, so it is excluded from pending.
     assert summary["data"]["pending_followups"] == 1
     pending = client.get("/api/v1/leads?followup=pending", headers=admin_auth).json()
     assert pending["data"]["total"] == 1

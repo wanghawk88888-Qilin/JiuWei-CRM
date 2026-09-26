@@ -1,13 +1,12 @@
-import datetime
-
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct
+from sqlalchemy import func
 
 from app.models.lead import Lead
 from app.models.followup import FollowUp
 from app.models.user import User
 
 from app.services import datetime_utils
+from app.services.lead_service import latest_followup_next_at_subquery
 
 
 def _apply_lead_owner_filter(query, current_user: User):
@@ -48,17 +47,16 @@ def get_dashboard_summary(db: Session, current_user: User) -> dict:
     # enrolled_leads
     enrolled_leads = base.filter(Lead.status == "enrolled").count()
 
-    # pending_followups — distinct leads with a due followup; enrolled / invalid
-    # leads are excluded so they no longer surface as "待跟进".
+    # pending_followups — leads whose *latest* followup is due today or overdue;
+    # enrolled / invalid leads are excluded so they no longer surface as "待跟进".
+    effective = latest_followup_next_at_subquery(db)
     pending_query = (
-        db.query(func.count(func.distinct(FollowUp.lead_id)))
-        .join(Lead, FollowUp.lead_id == Lead.id)
+        db.query(func.count(Lead.id))
         .filter(
-            FollowUp.deleted_at.is_(None),
-            FollowUp.next_followup_at.isnot(None),
-            datetime_utils.normalize_column(FollowUp.next_followup_at) <= today_end,
             Lead.deleted_at.is_(None),
             Lead.status.notin_(["enrolled", "invalid"]),
+            effective.isnot(None),
+            effective <= today_end,
         )
     )
     pending_query = _apply_lead_owner_filter(pending_query, current_user)
@@ -73,40 +71,28 @@ def get_dashboard_summary(db: Session, current_user: User) -> dict:
 
 
 def get_today_followups(db: Session, current_user: User) -> list[dict]:
-    """Return today's, overdue, and upcoming followups (max 30).
+    """Return today's followups: overdue + due-today, sorted by urgency.
 
-    Priority sorting:
-    1. Overdue  (next_followup_at < today)
-    2. Today    (next_followup_at == today)
-    3. Upcoming (next_followup_at > today, within 3 days)
+    The business definition of "今日待跟进" is:
 
-    Excludes enrolled and invalid leads.
-    Deduplicates by lead_id — keeps the earliest next_followup_at per lead.
+      overdue  (effective next_followup_at < today)
+      today    (effective next_followup_at == today, at any time)
+
+    ``effective next_followup_at`` is the latest non-deleted followup's value
+    (see ``latest_followup_next_at_subquery``). Tomorrow and later are excluded,
+    as are enrolled / invalid and soft-deleted leads. No silent cap is applied —
+    the list always matches the dashboard "待跟进" count.
     """
 
-    now = datetime_utils.business_now()
-    today_str = now.strftime("%Y-%m-%d")
+    today_str = datetime_utils.business_today()
     today_start = today_str + " 00:00:00"
     today_end = today_str + " 23:59:59"
-    upcoming_end = (now + datetime.timedelta(days=3)).strftime("%Y-%m-%d") + " 23:59:59"
 
     from app.models.course import Course
 
-    # Subquery: earliest next_followup_at per lead — min over the normalised
-    # value so mixed T / space formats resolve to the true earliest time.
-    earliest_fu = (
-        db.query(
-            FollowUp.lead_id,
-            func.min(datetime_utils.normalize_column(FollowUp.next_followup_at)).label("earliest_next"),
-        )
-        .filter(
-            FollowUp.deleted_at.is_(None),
-            FollowUp.next_followup_at.isnot(None),
-            datetime_utils.normalize_column(FollowUp.next_followup_at) <= upcoming_end,
-        )
-        .group_by(FollowUp.lead_id)
-        .subquery("earliest_fu")
-    )
+    # Effective next-followup time (latest followup, normalised) — shared with
+    # the summary count and the lead list `followup=pending` filter.
+    effective = latest_followup_next_at_subquery(db)
 
     # Correlated subquery: latest followup content for each lead
     latest_content_subq = (
@@ -128,18 +114,19 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
             Lead.phone,
             Lead.status,
             Lead.intention_level,
-            earliest_fu.c.earliest_next.label("next_followup_at"),
+            effective.label("next_followup_at"),
             Lead.owner_id,
             User.real_name.label("owner_name"),
             Course.name.label("intended_course_name"),
             latest_content_subq.label("latest_followup_content"),
         )
-        .join(earliest_fu, Lead.id == earliest_fu.c.lead_id)
         .outerjoin(Course, Lead.intended_course_id == Course.id)
         .outerjoin(User, Lead.owner_id == User.id)
         .filter(
             Lead.deleted_at.is_(None),
             Lead.status.notin_(["enrolled", "invalid"]),
+            effective.isnot(None),
+            effective <= today_end,
         )
     )
 
@@ -155,12 +142,7 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
         # Classify priority — normalise so both "T" and space formats compare
         # correctly against the day boundaries.
         next_at = datetime_utils.normalize_datetime(row.next_followup_at) or ""
-        if next_at < today_start:
-            priority = "overdue"
-        elif next_at <= today_end:
-            priority = "today"
-        else:
-            priority = "upcoming"
+        priority = "overdue" if next_at < today_start else "today"
 
         # Truncate latest content for summary display
         content = row.latest_followup_content
@@ -181,14 +163,14 @@ def get_today_followups(db: Session, current_user: User) -> list[dict]:
             "followup_priority": priority,
         })
 
-    # Sort: overdue → today → upcoming, each group ASC by next_followup_at
-    priority_order = {"overdue": 0, "today": 1, "upcoming": 2}
+    # Sort: overdue → today, each group ASC by next_followup_at.
+    priority_order = {"overdue": 0, "today": 1}
     items.sort(key=lambda x: (
         priority_order.get(x["followup_priority"], 9),
         datetime_utils.normalize_datetime(x["next_followup_at"]) or "",
     ))
 
-    return items[:30]
+    return items
 
 
 def _enrich_owner_names(db: Session, leads: list[Lead]) -> None:

@@ -201,7 +201,7 @@ export interface TodayFollowUpItem {
   owner_name: string | null;
   intended_course_name: string | null;
   latest_followup_content: string | null;
-  followup_priority: string;  // "overdue" | "today" | "upcoming"
+  followup_priority: string;  // "overdue" | "today"
 }
 
 export interface RecentLeadItem {
